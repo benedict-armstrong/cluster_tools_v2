@@ -1,5 +1,6 @@
 use crate::config::ClusterConfig;
 use crate::utils::serde::deserialize_request_gpus;
+use comfy_table::{presets::UTF8_FULL, Attribute, Cell, Color, ContentArrangement, Table};
 use serde::Deserialize;
 use std::process::Command;
 
@@ -43,6 +44,103 @@ impl PriceStats {
 fn job_prio_to_price(job_prio: i32) -> f64 {
     // Convert JobPrio range [-1000, 1000] to price range [0, 2000]
     (job_prio + 1000) as f64
+}
+
+fn create_combined_stats_table(gpu_stats: &PriceStats, cpu_stats: &PriceStats) -> Table {
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec![
+            Cell::new("Job Type").add_attribute(Attribute::Bold),
+            Cell::new("Status").add_attribute(Attribute::Bold),
+            Cell::new("Count").add_attribute(Attribute::Bold),
+            Cell::new("Average Price").add_attribute(Attribute::Bold),
+        ]);
+
+    // GPU Jobs
+    if gpu_stats.total_jobs > 0 {
+        table.add_row(vec![
+            Cell::new("🖥️  GPU").fg(Color::Green),
+            Cell::new("Total"),
+            Cell::new(gpu_stats.total_jobs.to_string()).fg(Color::Green),
+            Cell::new(format!("{:.2}", gpu_stats.avg_price)).fg(Color::Cyan),
+        ]);
+
+        table.add_row(vec![
+            Cell::new(""),
+            Cell::new("Idle"),
+            Cell::new(gpu_stats.idle_jobs.to_string()).fg(Color::Blue),
+            Cell::new(if gpu_stats.idle_jobs > 0 {
+                format!("{:.2}", gpu_stats.avg_idle_price)
+            } else {
+                "N/A".to_string()
+            })
+            .fg(Color::Cyan),
+        ]);
+
+        table.add_row(vec![
+            Cell::new(""),
+            Cell::new("Running"),
+            Cell::new(gpu_stats.running_jobs.to_string()).fg(Color::Magenta),
+            Cell::new(if gpu_stats.running_jobs > 0 {
+                format!("{:.2}", gpu_stats.avg_running_price)
+            } else {
+                "N/A".to_string()
+            })
+            .fg(Color::Cyan),
+        ]);
+    } else {
+        table.add_row(vec![
+            Cell::new("🖥️  GPU").fg(Color::Green),
+            Cell::new("No jobs found"),
+            Cell::new("-").fg(Color::DarkGrey),
+            Cell::new("-").fg(Color::DarkGrey),
+        ]);
+    }
+
+    // CPU Jobs
+    if cpu_stats.total_jobs > 0 {
+        table.add_row(vec![
+            Cell::new("💻 CPU").fg(Color::Blue),
+            Cell::new("Total"),
+            Cell::new(cpu_stats.total_jobs.to_string()).fg(Color::Green),
+            Cell::new(format!("{:.2}", cpu_stats.avg_price)).fg(Color::Cyan),
+        ]);
+
+        table.add_row(vec![
+            Cell::new(""),
+            Cell::new("Idle"),
+            Cell::new(cpu_stats.idle_jobs.to_string()).fg(Color::Blue),
+            Cell::new(if cpu_stats.idle_jobs > 0 {
+                format!("{:.2}", cpu_stats.avg_idle_price)
+            } else {
+                "N/A".to_string()
+            })
+            .fg(Color::Cyan),
+        ]);
+
+        table.add_row(vec![
+            Cell::new(""),
+            Cell::new("Running"),
+            Cell::new(cpu_stats.running_jobs.to_string()).fg(Color::Magenta),
+            Cell::new(if cpu_stats.running_jobs > 0 {
+                format!("{:.2}", cpu_stats.avg_running_price)
+            } else {
+                "N/A".to_string()
+            })
+            .fg(Color::Cyan),
+        ]);
+    } else {
+        table.add_row(vec![
+            Cell::new("💻 CPU").fg(Color::Blue),
+            Cell::new("No jobs found"),
+            Cell::new("-").fg(Color::DarkGrey),
+            Cell::new("-").fg(Color::DarkGrey),
+        ]);
+    }
+
+    table
 }
 
 fn calculate_stats(jobs: &[Job], has_gpu: bool) -> PriceStats {
@@ -175,47 +273,8 @@ pub fn handle_price() -> Result<(), Box<dyn std::error::Error>> {
     let gpu_stats = calculate_stats(&jobs, true);
     let no_gpu_stats = calculate_stats(&jobs, false);
 
-    // Display results
-    println!("\n=== Job Price Analysis ===");
-    println!("Total jobs analyzed: {}", jobs.len());
-
-    println!("\n--- GPU Jobs ---");
-    if gpu_stats.total_jobs > 0 {
-        println!("Total GPU jobs: {}", gpu_stats.total_jobs);
-        println!("  Idle: {} jobs", gpu_stats.idle_jobs);
-        println!("  Running: {} jobs", gpu_stats.running_jobs);
-        println!("Average price (all): {:.2}", gpu_stats.avg_price);
-        if gpu_stats.idle_jobs > 0 {
-            println!("Average price (idle): {:.2}", gpu_stats.avg_idle_price);
-        }
-        if gpu_stats.running_jobs > 0 {
-            println!(
-                "Average price (running): {:.2}",
-                gpu_stats.avg_running_price
-            );
-        }
-    } else {
-        println!("No GPU jobs found.");
-    }
-
-    println!("\n--- Non-GPU Jobs ---");
-    if no_gpu_stats.total_jobs > 0 {
-        println!("Total non-GPU jobs: {}", no_gpu_stats.total_jobs);
-        println!("  Idle: {} jobs", no_gpu_stats.idle_jobs);
-        println!("  Running: {} jobs", no_gpu_stats.running_jobs);
-        println!("Average price (all): {:.2}", no_gpu_stats.avg_price);
-        if no_gpu_stats.idle_jobs > 0 {
-            println!("Average price (idle): {:.2}", no_gpu_stats.avg_idle_price);
-        }
-        if no_gpu_stats.running_jobs > 0 {
-            println!(
-                "Average price (running): {:.2}",
-                no_gpu_stats.avg_running_price
-            );
-        }
-    } else {
-        println!("No non-GPU jobs found.");
-    }
+    let combined_table = create_combined_stats_table(&gpu_stats, &no_gpu_stats);
+    println!("{}", combined_table);
 
     Ok(())
 }
