@@ -64,7 +64,7 @@ fn create_combined_stats_table(gpu_stats: &PriceStats, cpu_stats: &PriceStats) -
             Cell::new("🖥️  GPU").fg(Color::Green),
             Cell::new("Total"),
             Cell::new(gpu_stats.total_jobs.to_string()).fg(Color::Green),
-            Cell::new(format!("{:.2}", gpu_stats.avg_price)).fg(Color::Cyan),
+            Cell::new(format!("{:.2}", gpu_stats.avg_price)),
         ]);
 
         table.add_row(vec![
@@ -75,8 +75,7 @@ fn create_combined_stats_table(gpu_stats: &PriceStats, cpu_stats: &PriceStats) -
                 format!("{:.2}", gpu_stats.avg_idle_price)
             } else {
                 "N/A".to_string()
-            })
-            .fg(Color::Cyan),
+            }),
         ]);
 
         table.add_row(vec![
@@ -87,8 +86,7 @@ fn create_combined_stats_table(gpu_stats: &PriceStats, cpu_stats: &PriceStats) -
                 format!("{:.2}", gpu_stats.avg_running_price)
             } else {
                 "N/A".to_string()
-            })
-            .fg(Color::Cyan),
+            }),
         ]);
     } else {
         table.add_row(vec![
@@ -105,7 +103,7 @@ fn create_combined_stats_table(gpu_stats: &PriceStats, cpu_stats: &PriceStats) -
             Cell::new("💻 CPU").fg(Color::Blue),
             Cell::new("Total"),
             Cell::new(cpu_stats.total_jobs.to_string()).fg(Color::Green),
-            Cell::new(format!("{:.2}", cpu_stats.avg_price)).fg(Color::Cyan),
+            Cell::new(format!("{:.2}", cpu_stats.avg_price)),
         ]);
 
         table.add_row(vec![
@@ -116,8 +114,7 @@ fn create_combined_stats_table(gpu_stats: &PriceStats, cpu_stats: &PriceStats) -
                 format!("{:.2}", cpu_stats.avg_idle_price)
             } else {
                 "N/A".to_string()
-            })
-            .fg(Color::Cyan),
+            }),
         ]);
 
         table.add_row(vec![
@@ -128,8 +125,7 @@ fn create_combined_stats_table(gpu_stats: &PriceStats, cpu_stats: &PriceStats) -
                 format!("{:.2}", cpu_stats.avg_running_price)
             } else {
                 "N/A".to_string()
-            })
-            .fg(Color::Cyan),
+            }),
         ]);
     } else {
         table.add_row(vec![
