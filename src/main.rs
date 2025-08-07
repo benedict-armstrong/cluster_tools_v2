@@ -1,8 +1,9 @@
 mod cmd;
 mod config;
+mod utils;
 
 use clap::{Parser, Subcommand};
-use cmd::handle_login;
+use cmd::{handle_login, handle_price};
 
 #[derive(Parser)]
 #[command(name = "cluster")]
@@ -16,6 +17,8 @@ struct Cli {
 enum Commands {
     /// Configure login credentials for cluster access
     Login,
+    /// Analyze job prices on the cluster
+    Price,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -23,6 +26,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::Login => handle_login()?,
+        Commands::Price => handle_price()?,
     }
 
     Ok(())
