@@ -5257,72 +5257,6 @@
 ,
 {
   "JobPrio": -790,
-  "JobStatus": 2,
-  "RequestGPUs": 1
-}
-,
-{
-  "JobPrio": -790,
-  "JobStatus": 2,
-  "RequestGPUs": 1
-}
-,
-{
-  "JobPrio": -790,
-  "JobStatus": 2,
-  "RequestGPUs": 1
-}
-,
-{
-  "JobPrio": -790,
-  "JobStatus": 1,
-  "RequestGPUs": 1
-}
-,
-{
-  "JobPrio": -790,
-  "JobStatus": 1,
-  "RequestGPUs": 1
-}
-,
-{
-  "JobPrio": -790,
-  "JobStatus": 1,
-  "RequestGPUs": 1
-}
-,
-{
-  "JobPrio": -790,
-  "JobStatus": 1,
-  "RequestGPUs": 1
-}
-,
-{
-  "JobPrio": -790,
-  "JobStatus": 1,
-  "RequestGPUs": 1
-}
-,
-{
-  "JobPrio": -790,
-  "JobStatus": 1,
-  "RequestGPUs": 1
-}
-,
-{
-  "JobPrio": -790,
-  "JobStatus": 1,
-  "RequestGPUs": 1
-}
-,
-{
-  "JobPrio": -790,
-  "JobStatus": 1,
-  "RequestGPUs": 1
-}
-,
-{
-  "JobPrio": -790,
   "JobStatus": 1,
   "RequestGPUs": 1
 }
@@ -8515,12 +8449,6 @@
 ,
 {
   "JobPrio": -965,
-  "JobStatus": 2,
-  "RequestGPUs": 1
-}
-,
-{
-  "JobPrio": -965,
   "JobStatus": 5,
   "RequestGPUs": 1
 }
@@ -8581,7 +8509,13 @@
 ,
 {
   "JobPrio": -965,
-  "JobStatus": 2,
+  "JobStatus": 5,
+  "RequestGPUs": 1
+}
+,
+{
+  "JobPrio": -965,
+  "JobStatus": 5,
   "RequestGPUs": 1
 }
 ,
@@ -8607,5 +8541,17 @@
   "JobPrio": -600,
   "JobStatus": 1,
   "RequestGPUs": 8
+}
+,
+{
+  "JobPrio": -500,
+  "JobStatus": 1,
+  "RequestGPUs": 2
+}
+,
+{
+  "JobPrio": -500,
+  "JobStatus": 2,
+  "RequestGPUs": 1
 }
 ]

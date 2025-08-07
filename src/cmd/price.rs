@@ -160,7 +160,7 @@ pub fn handle_price() -> Result<(), Box<dyn std::error::Error>> {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // save stdout to file
-    std::fs::write("stdout.txt", stdout.as_bytes())?;
+    // std::fs::write("stdout.txt", stdout.as_bytes())?;
 
     // Parse JSON response
     let jobs: Vec<Job> = serde_json::from_str(&stdout)
