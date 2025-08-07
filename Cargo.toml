@@ -1,7 +1,20 @@
 [package]
-name = "cluster_tools_rust"
+name = "mpi_cluster_tools"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+description = "A collection of cluster management commands for HPC environments"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/benedict-armstrong/cluster_tools_v2"
+homepage = "https://github.com/benedict-armstrong/cluster_tools_v2"
+documentation = "https://docs.rs/mpi_cluster_tools"
+readme = "README.md"
+keywords = ["cluster", "hpc", "condor", "ssh", "job-management"]
+categories = ["command-line-utilities", "development-tools"]
+authors = ["Benedict Armstrong <benedict.armstrong@inf.ethz.ch>"]
+
+[[bin]]
+name = "mct"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
