@@ -1,7 +1,5 @@
 use crate::config::ClusterConfig;
-use crate::utils::serde::{
-    deserialize_i64_lenient, deserialize_i64_opt_numeric, deserialize_request_gpus,
-};
+use crate::utils::serde::{deserialize_i64_lenient, deserialize_request_gpus};
 use crate::utils::ssh::{parse_json_relaxed, run_remote};
 use comfy_table::{
     presets::UTF8_FULL, Attribute, Cell, CellAlignment, Color, ContentArrangement, Table,
@@ -27,30 +25,6 @@ struct JobRow {
         deserialize_with = "deserialize_request_gpus"
     )]
     request_gpus: i32,
-    #[serde(
-        rename = "RequestMemory",
-        default,
-        deserialize_with = "deserialize_i64_opt_numeric"
-    )]
-    request_memory: Option<i64>,
-    #[serde(
-        rename = "MemoryProvisioned",
-        default,
-        deserialize_with = "deserialize_i64_opt_numeric"
-    )]
-    memory_provisioned: Option<i64>,
-    #[serde(
-        rename = "RequestCpus",
-        default,
-        deserialize_with = "deserialize_i64_opt_numeric"
-    )]
-    request_cpus: Option<i64>,
-    #[serde(
-        rename = "CpusProvisioned",
-        default,
-        deserialize_with = "deserialize_i64_opt_numeric"
-    )]
-    cpus_provisioned: Option<i64>,
     #[serde(
         rename = "JobStartDate",
         default,
@@ -104,34 +78,16 @@ fn render_table(rows: &[JobRow]) -> Table {
             Cell::new("GPUs")
                 .add_attribute(Attribute::Bold)
                 .set_alignment(CellAlignment::Right),
-            Cell::new("Cost")
+            Cell::new("Bid")
                 .add_attribute(Attribute::Bold)
                 .set_alignment(CellAlignment::Right),
-            Cell::new("Mem (req/used MB)").add_attribute(Attribute::Bold),
-            Cell::new("CPU (req/used)").add_attribute(Attribute::Bold),
         ]);
 
     for j in rows {
         let jobid = format!("{}.{}", j.cluster_id, j.proc_id);
         let runtime = human_duration_from_unix(j.start_unix);
         let gpus = j.request_gpus;
-        let cost = price_from_prio(j.job_prio);
-        let mem_req = j
-            .request_memory
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "N/A".to_string());
-        let mem_used = j
-            .memory_provisioned
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "N/A".to_string());
-        let cpu_req = j
-            .request_cpus
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "N/A".to_string());
-        let cpu_used = j
-            .cpus_provisioned
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "N/A".to_string());
+        let bid = price_from_prio(j.job_prio);
 
         table.add_row(vec![
             Cell::new(jobid).fg(Color::Green),
@@ -139,9 +95,7 @@ fn render_table(rows: &[JobRow]) -> Table {
             Cell::new(j.args.as_deref().unwrap_or("")),
             Cell::new(runtime),
             Cell::new(gpus.to_string()).set_alignment(CellAlignment::Right),
-            Cell::new(format!("{:.0}", cost)).set_alignment(CellAlignment::Right),
-            Cell::new(format!("{}/{}", mem_req, mem_used)),
-            Cell::new(format!("{}/{}", cpu_req, cpu_used)),
+            Cell::new(format!("{:.0}", bid)).set_alignment(CellAlignment::Right),
         ]);
     }
 
