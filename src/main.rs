@@ -3,7 +3,7 @@ mod config;
 mod utils;
 
 use clap::{Parser, Subcommand};
-use cmd::{handle_jobs, handle_login, handle_logs, handle_price};
+use cmd::{handle_jobs, handle_list_jobs, handle_login, handle_logs, handle_price};
 
 #[derive(Parser)]
 #[command(name = "cluster")]
@@ -25,7 +25,9 @@ enum Commands {
         selector: Option<String>,
     },
     /// List and summarize jobs in a table
-    ListJobs,
+    Ls,
+    /// Get interactive job information
+    Jobs,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -35,7 +37,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Login => handle_login()?,
         Commands::Price => handle_price()?,
         Commands::Logs { selector } => handle_logs(selector)?,
-        Commands::ListJobs => handle_jobs()?,
+        Commands::Ls => handle_list_jobs()?,
+        Commands::Jobs => handle_jobs()?,
     }
 
     Ok(())

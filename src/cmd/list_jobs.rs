@@ -4,6 +4,7 @@ use crate::utils::ssh::{parse_json_relaxed, run_remote};
 use comfy_table::{
     presets::UTF8_FULL, Attribute, Cell, CellAlignment, Color, ContentArrangement, Table,
 };
+use crossterm::terminal;
 use serde::Deserialize;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -83,6 +84,9 @@ fn render_table(rows: &[JobRow]) -> Table {
                 .set_alignment(CellAlignment::Right),
         ]);
 
+    let (cols, _) = terminal::size().unwrap();
+    table.set_width(cols as u16);
+
     for j in rows {
         let jobid = format!("{}.{}", j.cluster_id, j.proc_id);
         let runtime = human_duration_from_unix(j.start_unix);
@@ -102,7 +106,7 @@ fn render_table(rows: &[JobRow]) -> Table {
     table
 }
 
-pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
+pub fn handle_list_jobs() -> Result<(), Box<dyn std::error::Error>> {
     let config = ClusterConfig::load();
     let login = match &config.login {
         Some(l) => l,
