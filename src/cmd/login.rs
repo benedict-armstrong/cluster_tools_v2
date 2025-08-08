@@ -5,8 +5,8 @@ pub fn handle_login() -> Result<(), Box<dyn std::error::Error>> {
     println!("Configure cluster login credentials");
 
     let options = vec![
+        "Use SSH config entry (recommended)",
         "Manual configuration (hostname, username, identity file)",
-        "Use SSH config entry",
     ];
 
     let selection = Select::new()
@@ -17,6 +17,20 @@ pub fn handle_login() -> Result<(), Box<dyn std::error::Error>> {
 
     let login_config = match selection {
         0 => {
+            // SSH config must be non-empty
+            let ssh_config_name: String = Input::new()
+                .with_prompt("SSH config name")
+                .allow_empty(false)
+                .interact_text()?;
+
+            LoginConfig {
+                hostname: String::new(), // Will be resolved from SSH config
+                username: String::new(), // Will be resolved from SSH config
+                identity_file: None,
+                ssh_config_name: Some(ssh_config_name),
+            }
+        }
+        1 => {
             // Manual configuration
             let hostname: String = Input::new().with_prompt("Hostname").interact_text()?;
 
@@ -36,19 +50,6 @@ pub fn handle_login() -> Result<(), Box<dyn std::error::Error>> {
                     Some(identity_file)
                 },
                 ssh_config_name: None,
-            }
-        }
-        1 => {
-            // SSH config
-            let ssh_config_name: String = Input::new()
-                .with_prompt("SSH config name")
-                .interact_text()?;
-
-            LoginConfig {
-                hostname: String::new(), // Will be resolved from SSH config
-                username: String::new(), // Will be resolved from SSH config
-                identity_file: None,
-                ssh_config_name: Some(ssh_config_name),
             }
         }
         _ => unreachable!(),
