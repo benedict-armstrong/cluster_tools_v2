@@ -1,6 +1,6 @@
 [package]
 name = "mpi_cluster_tools"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "A collection of cluster management commands for HPC environments"
 license = "MIT OR Apache-2.0"
