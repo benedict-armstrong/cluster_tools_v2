@@ -54,85 +54,115 @@ fn create_combined_stats_table(gpu_stats: &PriceStats, cpu_stats: &PriceStats) -
         .set_header(vec![
             Cell::new("Job Type").add_attribute(Attribute::Bold),
             Cell::new("Status").add_attribute(Attribute::Bold),
-            Cell::new("Count").add_attribute(Attribute::Bold),
-            Cell::new("Average Price").add_attribute(Attribute::Bold),
+            Cell::new("Count")
+                .add_attribute(Attribute::Bold)
+                .set_alignment(comfy_table::CellAlignment::Right),
+            Cell::new("Average Price")
+                .add_attribute(Attribute::Bold)
+                .set_alignment(comfy_table::CellAlignment::Right),
         ]);
 
     // GPU Jobs
     if gpu_stats.total_jobs > 0 {
         table.add_row(vec![
-            Cell::new("🖥️  GPU").fg(Color::Green),
+            Cell::new("GPU").fg(Color::Green),
             Cell::new("Total"),
-            Cell::new(gpu_stats.total_jobs.to_string()).fg(Color::Green),
-            Cell::new(format!("{:.2}", gpu_stats.avg_price)),
+            Cell::new(gpu_stats.total_jobs.to_string())
+                .fg(Color::Green)
+                .set_alignment(comfy_table::CellAlignment::Right),
+            Cell::new(format!("{:.2}", gpu_stats.avg_price))
+                .set_alignment(comfy_table::CellAlignment::Right),
         ]);
 
         table.add_row(vec![
             Cell::new(""),
             Cell::new("Idle"),
-            Cell::new(gpu_stats.idle_jobs.to_string()).fg(Color::Blue),
+            Cell::new(gpu_stats.idle_jobs.to_string())
+                .fg(Color::Blue)
+                .set_alignment(comfy_table::CellAlignment::Right),
             Cell::new(if gpu_stats.idle_jobs > 0 {
                 format!("{:.2}", gpu_stats.avg_idle_price)
             } else {
                 "N/A".to_string()
-            }),
+            })
+            .set_alignment(comfy_table::CellAlignment::Right),
         ]);
 
         table.add_row(vec![
             Cell::new(""),
             Cell::new("Running"),
-            Cell::new(gpu_stats.running_jobs.to_string()).fg(Color::Magenta),
+            Cell::new(gpu_stats.running_jobs.to_string())
+                .fg(Color::Magenta)
+                .set_alignment(comfy_table::CellAlignment::Right),
             Cell::new(if gpu_stats.running_jobs > 0 {
                 format!("{:.2}", gpu_stats.avg_running_price)
             } else {
                 "N/A".to_string()
-            }),
+            })
+            .set_alignment(comfy_table::CellAlignment::Right),
         ]);
     } else {
         table.add_row(vec![
-            Cell::new("🖥️  GPU").fg(Color::Green),
+            Cell::new("GPU").fg(Color::Green),
             Cell::new("No jobs found"),
-            Cell::new("-").fg(Color::DarkGrey),
-            Cell::new("-").fg(Color::DarkGrey),
+            Cell::new("-")
+                .fg(Color::DarkGrey)
+                .set_alignment(comfy_table::CellAlignment::Right),
+            Cell::new("-")
+                .fg(Color::DarkGrey)
+                .set_alignment(comfy_table::CellAlignment::Right),
         ]);
     }
 
     // CPU Jobs
     if cpu_stats.total_jobs > 0 {
         table.add_row(vec![
-            Cell::new("💻 CPU").fg(Color::Blue),
+            Cell::new("CPU").fg(Color::Blue),
             Cell::new("Total"),
-            Cell::new(cpu_stats.total_jobs.to_string()).fg(Color::Green),
-            Cell::new(format!("{:.2}", cpu_stats.avg_price)),
+            Cell::new(cpu_stats.total_jobs.to_string())
+                .fg(Color::Green)
+                .set_alignment(comfy_table::CellAlignment::Right),
+            Cell::new(format!("{:.2}", cpu_stats.avg_price))
+                .set_alignment(comfy_table::CellAlignment::Right),
         ]);
 
         table.add_row(vec![
             Cell::new(""),
             Cell::new("Idle"),
-            Cell::new(cpu_stats.idle_jobs.to_string()).fg(Color::Blue),
+            Cell::new(cpu_stats.idle_jobs.to_string())
+                .fg(Color::Blue)
+                .set_alignment(comfy_table::CellAlignment::Right),
             Cell::new(if cpu_stats.idle_jobs > 0 {
                 format!("{:.2}", cpu_stats.avg_idle_price)
             } else {
                 "N/A".to_string()
-            }),
+            })
+            .set_alignment(comfy_table::CellAlignment::Right),
         ]);
 
         table.add_row(vec![
             Cell::new(""),
             Cell::new("Running"),
-            Cell::new(cpu_stats.running_jobs.to_string()).fg(Color::Magenta),
+            Cell::new(cpu_stats.running_jobs.to_string())
+                .fg(Color::Magenta)
+                .set_alignment(comfy_table::CellAlignment::Right),
             Cell::new(if cpu_stats.running_jobs > 0 {
                 format!("{:.2}", cpu_stats.avg_running_price)
             } else {
                 "N/A".to_string()
-            }),
+            })
+            .set_alignment(comfy_table::CellAlignment::Right),
         ]);
     } else {
         table.add_row(vec![
-            Cell::new("💻 CPU").fg(Color::Blue),
+            Cell::new("CPU").fg(Color::Blue),
             Cell::new("No jobs found"),
-            Cell::new("-").fg(Color::DarkGrey),
-            Cell::new("-").fg(Color::DarkGrey),
+            Cell::new("-")
+                .fg(Color::DarkGrey)
+                .set_alignment(comfy_table::CellAlignment::Right),
+            Cell::new("-")
+                .fg(Color::DarkGrey)
+                .set_alignment(comfy_table::CellAlignment::Right),
         ]);
     }
 
