@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LoginConfig {
@@ -38,5 +39,35 @@ impl ClusterConfig {
         fs::write(&config_path, contents)?;
         println!("Configuration saved to {}", config_path.display());
         Ok(())
+    }
+
+    // get username from login config or from ssh config
+    pub fn get_username(&self) -> Option<String> {
+        let login = self.login.as_ref()?;
+        if !login.username.is_empty() {
+            return Some(login.username.clone());
+        }
+
+        // Fallback: resolve from SSH config using `ssh -G <alias>`
+        if let Some(alias) = &login.ssh_config_name {
+            if let Ok(output) = Command::new("ssh").args(["-G", alias]).output() {
+                if output.status.success() {
+                    if let Ok(text) = String::from_utf8(output.stdout) {
+                        for line in text.lines() {
+                            let line_trim = line.trim();
+                            // OpenSSH outputs lowercase keys in `ssh -G`
+                            if let Some(rest) = line_trim.strip_prefix("user ") {
+                                let value = rest.trim();
+                                if !value.is_empty() {
+                                    return Some(value.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        None
     }
 }

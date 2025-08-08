@@ -1,8 +1,8 @@
 use crate::config::ClusterConfig;
 use crate::utils::serde::deserialize_request_gpus;
+use crate::utils::ssh::{parse_json_relaxed, run_remote};
 use comfy_table::{presets::UTF8_FULL, Attribute, Cell, Color, ContentArrangement, Table};
 use serde::Deserialize;
-use std::process::Command;
 
 #[derive(Deserialize, Debug)]
 struct Job {
@@ -228,66 +228,34 @@ fn calculate_stats(jobs: &[Job], has_gpu: bool) -> PriceStats {
     }
 }
 
-fn build_ssh_command(config: &ClusterConfig) -> Vec<String> {
-    let login_config = config.login.as_ref().unwrap();
-    let mut ssh_args = vec!["ssh".to_string()];
-
-    if let Some(ssh_config_name) = &login_config.ssh_config_name {
-        // Use SSH config
-        ssh_args.push(ssh_config_name.clone());
-    } else {
-        // Manual configuration
-        if let Some(identity_file) = &login_config.identity_file {
-            ssh_args.push("-i".to_string());
-            ssh_args.push(identity_file.clone());
-        }
-        ssh_args.push(format!(
-            "{}@{}",
-            login_config.username, login_config.hostname
-        ));
-    }
-
-    ssh_args.push("condor_q".to_string());
-    ssh_args.push("-json".to_string());
-    ssh_args.push("-attributes".to_string());
-    ssh_args.push("JobPrio,JobStatus,RequestGPUs".to_string());
-
-    ssh_args
-}
-
 pub fn handle_price() -> Result<(), Box<dyn std::error::Error>> {
     let config = ClusterConfig::load();
 
     // Check if login configuration exists
-    if config.login.is_none() {
-        eprintln!("Error: No login configuration found.");
-        eprintln!("Please run 'cluster login' first to configure your connection settings.");
-        std::process::exit(1);
-    }
+    let login = match &config.login {
+        Some(l) => l,
+        None => {
+            eprintln!("Error: No login configuration found.");
+            eprintln!("Please run 'cluster login' first to configure your connection settings.");
+            std::process::exit(1);
+        }
+    };
 
     println!("Connecting to cluster and fetching job data...");
 
-    // Build SSH command
-    let ssh_args = build_ssh_command(&config);
+    let attrs = "JobPrio,JobStatus,RequestGPUs";
+    let condor_cmd = format!("condor_q -json -attributes {}", attrs);
 
-    // Execute SSH command
-    let output = Command::new(&ssh_args[0])
-        .args(&ssh_args[1..])
-        .output()
-        .map_err(|e| format!("Failed to execute SSH command: {}", e))?;
-
+    let output = run_remote(login, &condor_cmd)?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("SSH command failed: {}", stderr).into());
     }
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = &output.stdout;
 
-    // save stdout to file
-    // std::fs::write("stdout.txt", stdout.as_bytes())?;
-
-    // Parse JSON response
-    let jobs: Vec<Job> = serde_json::from_str(&stdout)
+    // Parse JSON response (relaxed)
+    let jobs: Vec<Job> = parse_json_relaxed(stdout)
         .map_err(|e| format!("Failed to parse JSON response: {}", e))?;
 
     if jobs.is_empty() {
