@@ -44,35 +44,7 @@ where
             Ok(value as i32)
         }
 
-        fn visit_u8<E>(self, value: u8) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            Ok(value as i32)
-        }
-
-        fn visit_u16<E>(self, value: u16) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            Ok(value as i32)
-        }
-
-        fn visit_u32<E>(self, value: u32) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            Ok(value as i32)
-        }
-
         fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            Ok(value as i32)
-        }
-
-        fn visit_f32<E>(self, value: f32) -> Result<Self::Value, E>
         where
             E: de::Error,
         {
@@ -90,7 +62,6 @@ where
         where
             E: de::Error,
         {
-            // Ignore string values and default to 0
             Ok(0)
         }
 
@@ -98,10 +69,117 @@ where
         where
             E: de::Error,
         {
-            // Ignore string values and default to 0
             Ok(0)
         }
     }
 
     deserializer.deserialize_any(RequestGPUsVisitor)
+}
+
+pub fn deserialize_i64_lenient<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+    use std::fmt;
+
+    struct V;
+    impl<'de> Visitor<'de> for V {
+        type Value = i64;
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("an integer or string")
+        }
+        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(v)
+        }
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(v as i64)
+        }
+        fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(v as i64)
+        }
+        fn visit_str<E>(self, _s: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(0)
+        }
+        fn visit_string<E>(self, _s: String) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(0)
+        }
+    }
+
+    deserializer.deserialize_any(V)
+}
+
+// New: numeric-or-none helpers
+pub fn deserialize_i64_opt_numeric<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+    use std::fmt;
+
+    struct V;
+    impl<'de> Visitor<'de> for V {
+        type Value = Option<i64>;
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("a numeric value or string")
+        }
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(Some(v))
+        }
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(Some(v as i64))
+        }
+        fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(Some(v as i64))
+        }
+        fn visit_str<E>(self, _s: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+        fn visit_string<E>(self, _s: String) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+    }
+    deserializer.deserialize_any(V)
 }
