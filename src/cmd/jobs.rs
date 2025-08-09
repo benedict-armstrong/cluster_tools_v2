@@ -4,7 +4,11 @@ use crate::config::ClusterConfig;
 use crate::utils::serde::deserialize_request_gpus;
 use crate::utils::ssh::{parse_json_relaxed, run_remote};
 use crossterm::event::{read, Event, KeyCode, KeyEvent, KeyModifiers};
-use crossterm::{cursor, execute, terminal};
+use crossterm::{
+    cursor, execute,
+    style::{Color, ResetColor, SetForegroundColor},
+    terminal,
+};
 use serde::Deserialize;
 use std::io::{stdout, Write};
 
@@ -18,6 +22,8 @@ struct JobRow {
     cmd: Option<String>,
     #[serde(rename = "Args")]
     args: Option<String>,
+    #[serde(rename = "JobStatus")]
+    job_status: i32,
     #[serde(
         rename = "RequestGPUs",
         default,
@@ -52,6 +58,7 @@ pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
         "ProcId",
         "Cmd",
         "Args",
+        "JobStatus",
         "RequestGPUs",
         "JobStartDate",
     ]
@@ -63,27 +70,25 @@ pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
         return Err(format!("SSH command failed: {}", stderr).into());
     }
 
-    let jobs: Vec<JobRow> = parse_json_relaxed(&out.stdout)?;
-    if jobs.is_empty() {
+    let running_jobs: Vec<JobRow> = parse_json_relaxed(&out.stdout)?;
+    let hist_attrs = [
+        "ClusterId",
+        "ProcId",
+        "Cmd",
+        "Args",
+        "JobStatus",
+        "RequestGPUs",
+    ]
+    .join(",");
+    let recent_hist: Vec<JobRow> = condor_history_for_user(login, &username, &hist_attrs, 10)?;
+
+    let mut rows: Vec<JobRow> = Vec::new();
+    rows.extend(running_jobs);
+    rows.extend(recent_hist);
+
+    if rows.is_empty() {
         println!("No jobs found for user {}.", username);
         return Ok(());
-    }
-
-    // Show recent history before entering interactive UI
-    let hist_attrs = ["ClusterId", "ProcId", "Cmd", "Args", "RequestGPUs"].join(",");
-    let recent_hist: Vec<JobRow> = condor_history_for_user(login, &username, &hist_attrs, 10)?;
-    if !recent_hist.is_empty() {
-        println!("Recent finished jobs (last 10):");
-        for j in recent_hist.iter() {
-            println!(
-                "{:>10}  GPUs: {}  Cmd: {} {}",
-                format!("{}.{}", j.cluster_id, j.proc_id),
-                j.request_gpus,
-                j.cmd.as_deref().unwrap_or(""),
-                j.args.as_deref().unwrap_or("")
-            );
-        }
-        println!("");
     }
 
     let mut sel: usize = 0;
@@ -98,8 +103,27 @@ pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
             // Render frame
             execute!(stdout, terminal::Clear(terminal::ClearType::All))?;
 
-            // Terminal width for dynamic args column
+            // Terminal width for dynamic column sizing
             let (cols, _) = terminal::size()?;
+            let cols = cols as usize;
+            const JOBID_W: usize = 10;
+            const GPUS_W: usize = 4;
+            // sel_prefix (2) + status+space (2) + jobid (10) + two spaces (2) + gpus (4) + two spaces (2)
+            let base_consumed: usize = 2 + 2 + JOBID_W + 2 + GPUS_W + 2;
+            // Cmd column: min 20 chars, max 20% of terminal width. If 20% < 20, use 20.
+            let min_cmd_w: usize = 20;
+            let max_cmd_w: usize = cols / 5;
+            let mut cmd_w: usize = if max_cmd_w < min_cmd_w {
+                min_cmd_w
+            } else {
+                max_cmd_w
+            };
+            // Do not exceed available columns
+            let max_allowed_cmd = cols.saturating_sub(base_consumed + 2);
+            if cmd_w > max_allowed_cmd {
+                cmd_w = max_allowed_cmd;
+            }
+            let args_w: usize = cols.saturating_sub(base_consumed + cmd_w + 2);
 
             // Row 0: header
             let mut row: u16 = 0;
@@ -111,8 +135,20 @@ pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
             writeln!(stdout, "Use ↑/↓ to navigate, 'l' for logs, 'q' to quit")?;
             row += 1;
 
+            // Header row
+            execute!(
+                stdout,
+                cursor::MoveTo(0, row),
+                terminal::Clear(terminal::ClearType::CurrentLine)
+            )?;
+            let jobid_h = format!("{:>width$}", "JobID", width = JOBID_W);
+            let gpus_h = format!("{:>width$}", "GPUs", width = GPUS_W);
+            let cmd_h = format!("{:<width$}", "Cmd", width = cmd_w);
+            writeln!(stdout, "  S {}  {}  {}  Args", jobid_h, gpus_h, cmd_h)?;
+            row += 1;
+
             // Rows: jobs
-            for (idx, j) in jobs.iter().enumerate() {
+            for (idx, j) in rows.iter().enumerate() {
                 execute!(
                     stdout,
                     cursor::MoveTo(0, row),
@@ -120,27 +156,38 @@ pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
                 )?;
 
                 let sel_prefix = if idx == sel { "> " } else { "  " };
-                let cmd_display: String = j.cmd.as_deref().unwrap_or("").chars().take(50).collect();
+                let cmd_display: String =
+                    j.cmd.as_deref().unwrap_or("").chars().take(cmd_w).collect();
                 let args_full = j.args.as_deref().unwrap_or("");
 
                 // Build base without args
-                let base = format!(
-                    "{}{:>10}  GPUs: {}  Cmd: {} ",
-                    sel_prefix,
-                    job_id(j),
-                    j.request_gpus,
-                    cmd_display,
-                );
+                let jobid_col = format!("{:>width$}", job_id(j), width = JOBID_W);
+                let gpus_col = format!("{:>width$}", j.request_gpus, width = GPUS_W);
+                let cmd_col = format!("{:<width$}", cmd_display, width = cmd_w);
+                let base = format!("{}  {}  {}  ", jobid_col, gpus_col, cmd_col);
 
                 // Compute remaining columns for args
-                let total_cols = cols as usize;
-                let base_width = base.len();
-                let avail = total_cols.saturating_sub(base_width);
-                let args_display: String = if avail > 0 {
-                    args_full.chars().take(avail).collect()
+                let args_display: String = if args_w > 0 {
+                    args_full.chars().take(args_w).collect()
                 } else {
                     String::new()
                 };
+
+                // Selection prefix and colored status
+                write!(stdout, "{}", sel_prefix)?;
+                let (status_ch, status_color) = match j.job_status {
+                    1 => ('I', Color::Blue),      // Idle
+                    2 => ('R', Color::Green),     // Running
+                    3 => ('X', Color::DarkRed),   // Removed
+                    4 => ('C', Color::DarkGreen), // Completed
+                    5 => ('H', Color::Yellow),    // Held
+                    6 => ('O', Color::Cyan),      // Transferring Output
+                    7 => ('S', Color::Magenta),   // Suspended
+                    _ => ('?', Color::White),
+                };
+                execute!(stdout, SetForegroundColor(status_color))?;
+                write!(stdout, "{} ", status_ch)?;
+                execute!(stdout, ResetColor)?;
 
                 write!(stdout, "{}", base)?;
                 writeln!(stdout, "{}", args_display)?;
@@ -167,7 +214,7 @@ pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
                     code: KeyCode::Down,
                     ..
                 }) => {
-                    if sel + 1 < jobs.len() {
+                    if sel + 1 < rows.len() {
                         sel += 1;
                     }
                 }
@@ -176,7 +223,7 @@ pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
                     modifiers: KeyModifiers::NONE,
                     ..
                 }) => {
-                    let selected = &jobs[sel];
+                    let selected = &rows[sel];
                     // Restore terminal and show logs, then exit without returning to menu
                     execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show)?;
                     terminal::disable_raw_mode()?;
