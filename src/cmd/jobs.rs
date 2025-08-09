@@ -11,6 +11,7 @@ use crossterm::{
 };
 use serde::Deserialize;
 use std::io::{stdout, Write};
+use std::time::{Duration, Instant};
 
 #[derive(Deserialize, Debug)]
 struct JobRow {
@@ -34,6 +35,28 @@ struct JobRow {
 
 fn job_id(j: &JobRow) -> String {
     format!("{}.{}", j.cluster_id, j.proc_id)
+}
+
+fn scrolling_window(text: &str, width: usize, offset: usize) -> String {
+    let mut chars: Vec<char> = text.chars().collect();
+    if width == 0 {
+        return String::new();
+    }
+    if chars.len() <= width {
+        return format!("{:<width$}", text, width = width);
+    }
+    // Extended buffer to create a smooth loop: text + spaces(width) + text
+    let mut ext: Vec<char> = Vec::with_capacity(chars.len() * 2 + width);
+    ext.extend_from_slice(&chars);
+    ext.extend(std::iter::repeat(' ').take(width));
+    ext.append(&mut chars);
+    let max_start = ext.len().saturating_sub(width);
+    let start = if max_start == 0 {
+        0
+    } else {
+        offset % max_start
+    };
+    ext[start..start + width].iter().collect()
 }
 
 pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
@@ -99,6 +122,10 @@ pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
     execute!(stdout, terminal::EnterAlternateScreen, cursor::Hide)?;
 
     let res = (|| -> Result<(), Box<dyn std::error::Error>> {
+        // Scrolling state
+        let mut scroll_offset: usize = 0;
+        let mut scroll_start_at: Instant = Instant::now();
+        let mut last_scroll_tick: Instant = Instant::now();
         loop {
             // Render frame
             execute!(stdout, terminal::Clear(terminal::ClearType::All))?;
@@ -156,19 +183,19 @@ pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
                 )?;
 
                 let sel_prefix = if idx == sel { "> " } else { "  " };
-                let cmd_display: String =
-                    j.cmd.as_deref().unwrap_or("").chars().take(cmd_w).collect();
-                let args_full = j.args.as_deref().unwrap_or("");
+                let cmd_text = j.cmd.as_deref().unwrap_or("");
+                let args_text = j.args.as_deref().unwrap_or("");
+                let cmd_col = scrolling_window(cmd_text, cmd_w, scroll_offset);
 
                 // Build base without args
                 let jobid_col = format!("{:>width$}", job_id(j), width = JOBID_W);
                 let gpus_col = format!("{:>width$}", j.request_gpus, width = GPUS_W);
-                let cmd_col = format!("{:<width$}", cmd_display, width = cmd_w);
+                let cmd_col = cmd_col;
                 let base = format!("{}  {}  {}  ", jobid_col, gpus_col, cmd_col);
 
                 // Compute remaining columns for args
                 let args_display: String = if args_w > 0 {
-                    args_full.chars().take(args_w).collect()
+                    scrolling_window(args_text, args_w, scroll_offset)
                 } else {
                     String::new()
                 };
@@ -196,44 +223,61 @@ pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
             }
             stdout.flush()?;
 
-            // Input
-            match read()? {
-                Event::Key(KeyEvent {
-                    code: KeyCode::Char('q'),
-                    modifiers: KeyModifiers::NONE,
-                    ..
-                }) => break,
-                Event::Key(KeyEvent {
-                    code: KeyCode::Up, ..
-                }) => {
-                    if sel > 0 {
-                        sel -= 1;
+            // Scroll timing
+            let now = Instant::now();
+            if now.duration_since(scroll_start_at) >= Duration::from_secs(2)
+                && now.duration_since(last_scroll_tick) >= Duration::from_millis(300)
+            {
+                scroll_offset = scroll_offset.wrapping_add(1);
+                last_scroll_tick = now;
+            }
+
+            // Non-blocking input with timeout so scrolling can advance
+            if crossterm::event::poll(Duration::from_millis(100))? {
+                match read()? {
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char('q'),
+                        modifiers: KeyModifiers::NONE,
+                        ..
+                    }) => break,
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Up, ..
+                    }) => {
+                        if sel > 0 {
+                            sel -= 1;
+                        }
                     }
-                }
-                Event::Key(KeyEvent {
-                    code: KeyCode::Down,
-                    ..
-                }) => {
-                    if sel + 1 < rows.len() {
-                        sel += 1;
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Down,
+                        ..
+                    }) => {
+                        if sel + 1 < rows.len() {
+                            sel += 1;
+                        }
                     }
-                }
-                Event::Key(KeyEvent {
-                    code: KeyCode::Char('l'),
-                    modifiers: KeyModifiers::NONE,
-                    ..
-                }) => {
-                    let selected = &rows[sel];
-                    // Restore terminal and show logs, then exit without returning to menu
-                    execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show)?;
-                    terminal::disable_raw_mode()?;
-                    let selector = Some(format!("{}.{}", selected.cluster_id, selected.proc_id));
-                    if let Err(e) = handle_logs(selector) {
-                        eprintln!("Error showing logs: {}", e);
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char('l'),
+                        modifiers: KeyModifiers::NONE,
+                        ..
+                    }) => {
+                        let selected = &rows[sel];
+                        execute!(stdout, terminal::LeaveAlternateScreen, cursor::Show)?;
+                        terminal::disable_raw_mode()?;
+                        let selector =
+                            Some(format!("{}.{}", selected.cluster_id, selected.proc_id));
+                        if let Err(e) = handle_logs(selector) {
+                            eprintln!("Error showing logs: {}", e);
+                        }
+                        return Ok(());
                     }
-                    return Ok(()); // exit after showing logs
+                    Event::Resize(_, _) => {
+                        // Reset scrolling on resize
+                        scroll_offset = 0;
+                        scroll_start_at = Instant::now();
+                        last_scroll_tick = scroll_start_at;
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         }
         Ok(())
