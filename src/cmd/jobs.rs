@@ -11,6 +11,7 @@ use crossterm::{
 };
 use serde::Deserialize;
 use std::io::{stdout, Write};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 #[derive(Deserialize, Debug)]
@@ -45,10 +46,11 @@ fn scrolling_window(text: &str, width: usize, offset: usize) -> String {
     if chars.len() <= width {
         return format!("{:<width$}", text, width = width);
     }
-    // Extended buffer to create a smooth loop: text + spaces(width) + text
-    let mut ext: Vec<char> = Vec::with_capacity(chars.len() * 2 + width);
+    // Extended buffer: text + spaces(gap) + text, with a short gap for quicker repeat
+    let gap = std::cmp::min(width, 10);
+    let mut ext: Vec<char> = Vec::with_capacity(chars.len() * 2 + gap);
     ext.extend_from_slice(&chars);
-    ext.extend(std::iter::repeat(' ').take(width));
+    ext.extend(std::iter::repeat(' ').take(gap));
     ext.append(&mut chars);
     let max_start = ext.len().saturating_sub(width);
     let start = if max_start == 0 {
@@ -126,6 +128,7 @@ pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
         let mut scroll_offset: usize = 0;
         let mut scroll_start_at: Instant = Instant::now();
         let mut last_scroll_tick: Instant = Instant::now();
+        let mut scroll_paused: bool = true;
         loop {
             // Render frame
             execute!(stdout, terminal::Clear(terminal::ClearType::All))?;
@@ -159,7 +162,20 @@ pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
                 cursor::MoveTo(0, row),
                 terminal::Clear(terminal::ClearType::CurrentLine)
             )?;
-            writeln!(stdout, "Use ↑/↓ to navigate, 'l' for logs, 'q' to quit")?;
+            writeln!(
+                stdout,
+                "Use ↑/↓ to navigate, 'l' logs, 's' SSH, 'r' refresh, 'p' toggle scroll, 'q' quit"
+            )?;
+            row += 1;
+
+            // add row explaining statuses
+            execute!(
+                stdout,
+                cursor::MoveTo(0, row),
+                terminal::Clear(terminal::ClearType::CurrentLine)
+            )?;
+            execute!(stdout, SetForegroundColor(Color::DarkGrey))?;
+            writeln!(stdout, "I: Idle, R: Running, X: Removed, C: Completed, H: Held, O: Transferring Output, S: Suspended")?;
             row += 1;
 
             // Header row
@@ -225,11 +241,13 @@ pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
 
             // Scroll timing
             let now = Instant::now();
-            if now.duration_since(scroll_start_at) >= Duration::from_secs(2)
-                && now.duration_since(last_scroll_tick) >= Duration::from_millis(300)
-            {
-                scroll_offset = scroll_offset.wrapping_add(1);
-                last_scroll_tick = now;
+            if !scroll_paused {
+                if now.duration_since(scroll_start_at) >= Duration::from_millis(150)
+                    && now.duration_since(last_scroll_tick) >= Duration::from_millis(150)
+                {
+                    scroll_offset = scroll_offset.wrapping_add(1);
+                    last_scroll_tick = now;
+                }
             }
 
             // Non-blocking input with timeout so scrolling can advance
@@ -269,6 +287,91 @@ pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
                             eprintln!("Error showing logs: {}", e);
                         }
                         return Ok(());
+                    }
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char('r'),
+                        modifiers: KeyModifiers::NONE,
+                        ..
+                    }) => {
+                        // Show immediate indicator and refresh data synchronously
+                        execute!(
+                            stdout,
+                            cursor::MoveTo(0, 1),
+                            terminal::Clear(terminal::ClearType::CurrentLine)
+                        )?;
+                        writeln!(stdout, "Refreshing...")?;
+                        stdout.flush()?;
+
+                        let cmd = format!("condor_q {} -json -attributes {}", username, attrs);
+                        match run_remote(login, &cmd) {
+                            Ok(out) => {
+                                if !out.status.success() {
+                                    let stderr = String::from_utf8_lossy(&out.stderr);
+                                    eprintln!("Refresh failed: {}", stderr);
+                                } else if let Ok(new_running) =
+                                    parse_json_relaxed::<Vec<JobRow>>(&out.stdout)
+                                {
+                                    if let Ok(new_hist) =
+                                        condor_history_for_user(login, &username, &hist_attrs, 10)
+                                    {
+                                        rows.clear();
+                                        rows.extend(new_running);
+                                        rows.extend(new_hist);
+                                        sel = if rows.is_empty() {
+                                            0
+                                        } else {
+                                            sel.min(rows.len() - 1)
+                                        };
+                                        scroll_offset = 0;
+                                        scroll_start_at = Instant::now();
+                                        last_scroll_tick = scroll_start_at;
+                                    }
+                                }
+                            }
+                            Err(e) => eprintln!("Refresh error: {}", e),
+                        }
+                        // Next frame will clear the indicator
+                    }
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char('s'),
+                        modifiers: KeyModifiers::NONE,
+                        ..
+                    }) => {
+                        // Open new Terminal window and SSH to job via login node
+                        let selected = &rows[sel];
+                        let jobid = format!("{}.{}", selected.cluster_id, selected.proc_id);
+                        let mut ssh_cmd = String::from("ssh ");
+                        if let Some(name) = &login.ssh_config_name {
+                            ssh_cmd.push_str(name);
+                        } else {
+                            if let Some(identity) = &login.identity_file {
+                                if !identity.is_empty() {
+                                    ssh_cmd.push_str("-i '");
+                                    ssh_cmd.push_str(&identity.replace('\'', "'\\''"));
+                                    ssh_cmd.push_str("' ");
+                                }
+                            }
+                            ssh_cmd.push_str(&format!("{}@{}", login.username, login.hostname));
+                        }
+                        ssh_cmd.push(' ');
+                        ssh_cmd.push_str(&format!("\"condor_ssh_to_job {}\"", jobid));
+
+                        let script_cmd = ssh_cmd.replace('\\', "\\\\").replace('"', "\\\"");
+                        let osa = format!(
+                            "tell application \"Terminal\" to do script \"{}\"",
+                            script_cmd
+                        );
+                        let _ = Command::new("osascript").arg("-e").arg(osa).spawn();
+                    }
+                    Event::Key(KeyEvent {
+                        code: KeyCode::Char('p'),
+                        modifiers: KeyModifiers::NONE,
+                        ..
+                    }) => {
+                        // Toggle pause, restart delay on resume
+                        scroll_paused = !scroll_paused;
+                        scroll_start_at = Instant::now();
+                        last_scroll_tick = scroll_start_at;
                     }
                     Event::Resize(_, _) => {
                         // Reset scrolling on resize
