@@ -146,12 +146,9 @@ pub fn handle_list_jobs() -> Result<(), Box<dyn std::error::Error>> {
         return Err(format!("SSH command failed: {}", stderr).into());
     }
 
-    // Optional: write to disk for debugging
-    // std::fs::write("condor_q.json", &output.stdout)?;
-
     let jobs: Vec<JobRow> = parse_json_relaxed(&output.stdout)?;
     if jobs.is_empty() {
-        println!("No jobs found.");
+        println!("No jobs found for user {}.", username);
         return Ok(());
     }
 

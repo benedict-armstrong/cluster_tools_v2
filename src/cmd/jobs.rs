@@ -61,9 +61,10 @@ pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
         let stderr = String::from_utf8_lossy(&out.stderr);
         return Err(format!("SSH command failed: {}", stderr).into());
     }
+
     let jobs: Vec<JobRow> = parse_json_relaxed(&out.stdout)?;
     if jobs.is_empty() {
-        println!("No jobs found.");
+        println!("No jobs found for user {}.", username);
         return Ok(());
     }
 

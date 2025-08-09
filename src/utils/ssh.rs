@@ -35,10 +35,18 @@ pub fn run_remote(
 }
 
 pub fn parse_json_relaxed<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, serde_json::Error> {
+    // Handle empty byte slice as empty JSON array to support callers expecting a list
+    if bytes.is_empty() {
+        return serde_json::from_str("[]");
+    }
     if let Ok(v) = serde_json::from_slice(bytes) {
         return Ok(v);
     }
     let s = String::from_utf8_lossy(bytes);
+    // Handle whitespace-only response as empty JSON array
+    if s.trim().is_empty() {
+        return serde_json::from_str("[]");
+    }
     if let Some(start) = s.find('[').or_else(|| s.find('{')) {
         let end = s
             .rfind(']')
