@@ -1,15 +1,14 @@
+use crate::cmd::condor::condor_history_for_user;
 use crate::config::ClusterConfig;
-use crate::cmd::condor::condor_q_for_user;
 use crate::utils::serde::{deserialize_i64_lenient, deserialize_request_gpus};
 use comfy_table::{
     presets::UTF8_FULL, Attribute, Cell, CellAlignment, Color, ContentArrangement, Table,
 };
-use crossterm::terminal;
 use serde::Deserialize;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 #[derive(Deserialize, Debug)]
-struct JobRow {
+struct HistRow {
     #[serde(rename = "ClusterId")]
     cluster_id: i64,
     #[serde(rename = "ProcId")]
@@ -18,8 +17,6 @@ struct JobRow {
     cmd: Option<String>,
     #[serde(rename = "Args")]
     args: Option<String>,
-    #[serde(rename = "JobPrio")]
-    job_prio: i32,
     #[serde(
         rename = "RequestGPUs",
         default,
@@ -27,46 +24,20 @@ struct JobRow {
     )]
     request_gpus: i32,
     #[serde(
-        rename = "JobStartDate",
-        default,
-        deserialize_with = "deserialize_i64_lenient"
-    )]
-    start_unix: i64,
-    #[allow(dead_code)]
-    #[serde(
         rename = "QDate",
         default,
         deserialize_with = "deserialize_i64_lenient"
     )]
     q_unix: i64,
+    #[serde(
+        rename = "JobStartDate",
+        default,
+        deserialize_with = "deserialize_i64_lenient"
+    )]
+    start_unix: i64,
 }
 
-fn price_from_prio(job_prio: i32) -> f64 {
-    (job_prio + 1000) as f64
-}
-
-fn human_duration_from_unix(start: i64) -> String {
-    if start <= 0 {
-        return "-".to_string();
-    }
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or(Duration::from_secs(0))
-        .as_secs() as i64;
-    let secs = (now - start).max(0) as u64;
-    let h = secs / 3600;
-    let m = (secs % 3600) / 60;
-    let s = secs % 60;
-    if h > 0 {
-        format!("{}h {:02}m", h, m)
-    } else if m > 0 {
-        format!("{}m {:02}s", m, s)
-    } else {
-        format!("{}s", s)
-    }
-}
-
-fn render_table(rows: &[JobRow]) -> Table {
+fn render_hist_table(rows: &[HistRow]) -> Table {
     let mut table = Table::new();
     table
         .load_preset(UTF8_FULL)
@@ -75,38 +46,48 @@ fn render_table(rows: &[JobRow]) -> Table {
             Cell::new("JobID").add_attribute(Attribute::Bold),
             Cell::new("Cmd").add_attribute(Attribute::Bold),
             Cell::new("Args").add_attribute(Attribute::Bold),
-            Cell::new("Runtime").add_attribute(Attribute::Bold),
             Cell::new("GPUs")
                 .add_attribute(Attribute::Bold)
                 .set_alignment(CellAlignment::Right),
-            Cell::new("Bid")
+            Cell::new("Queued")
+                .add_attribute(Attribute::Bold)
+                .set_alignment(CellAlignment::Right),
+            Cell::new("Started")
                 .add_attribute(Attribute::Bold)
                 .set_alignment(CellAlignment::Right),
         ]);
 
-    let (cols, _) = terminal::size().unwrap();
-    table.set_width(cols as u16);
-
     for j in rows {
         let jobid = format!("{}.{}", j.cluster_id, j.proc_id);
-        let runtime = human_duration_from_unix(j.start_unix);
-        let gpus = j.request_gpus;
-        let bid = price_from_prio(j.job_prio);
-
+        let queued = if j.q_unix > 0 {
+            // QDate is seconds since epoch
+            let dt = OffsetDateTime::from_unix_timestamp(j.q_unix).ok();
+            dt.map(|d| d.format(&Rfc3339).unwrap_or_else(|_| "-".into()))
+                .unwrap_or_else(|| "-".into())
+        } else {
+            "-".into()
+        };
+        let started = if j.start_unix > 0 {
+            let dt = OffsetDateTime::from_unix_timestamp(j.start_unix).ok();
+            dt.map(|d| d.format(&Rfc3339).unwrap_or_else(|_| "-".into()))
+                .unwrap_or_else(|| "-".into())
+        } else {
+            "-".into()
+        };
         table.add_row(vec![
-            Cell::new(jobid).fg(Color::Green),
+            Cell::new(jobid).fg(Color::DarkGrey),
             Cell::new(j.cmd.as_deref().unwrap_or("")),
             Cell::new(j.args.as_deref().unwrap_or("")),
-            Cell::new(runtime),
-            Cell::new(gpus.to_string()).set_alignment(CellAlignment::Right),
-            Cell::new(format!("{:.0}", bid)).set_alignment(CellAlignment::Right),
+            Cell::new(j.request_gpus.to_string()).set_alignment(CellAlignment::Right),
+            Cell::new(queued).set_alignment(CellAlignment::Right),
+            Cell::new(started).set_alignment(CellAlignment::Right),
         ]);
     }
 
     table
 }
 
-pub fn handle_list_jobs() -> Result<(), Box<dyn std::error::Error>> {
+pub fn handle_hist(limit: Option<usize>) -> Result<(), Box<dyn std::error::Error>> {
     let config = ClusterConfig::load();
     let login = match &config.login {
         Some(l) => l,
@@ -123,29 +104,27 @@ pub fn handle_list_jobs() -> Result<(), Box<dyn std::error::Error>> {
         )
     })?;
 
-    // Query current user's jobs (all states) with needed attributes
+    let limit = limit.unwrap_or(10);
+
     let attrs = [
         "ClusterId",
         "ProcId",
         "Cmd",
         "Args",
-        "JobPrio",
         "RequestGPUs",
-        "RequestMemory",
-        "MemoryProvisioned",
-        "RequestCpus",
-        "CpusProvisioned",
-        "JobStartDate",
         "QDate",
+        "JobStartDate",
     ]
     .join(",");
-    let jobs: Vec<JobRow> = condor_q_for_user(login, &username, &attrs)?;
-    if jobs.is_empty() {
-        println!("No jobs found for user {}.", username);
+
+    let rows: Vec<HistRow> = condor_history_for_user(login, &username, &attrs, limit)?;
+
+    if rows.is_empty() {
+        println!("No historical jobs found for user {}.", username);
         return Ok(());
     }
 
-    let table = render_table(&jobs);
+    let table = render_hist_table(&rows);
     println!("{}", table);
     Ok(())
 }

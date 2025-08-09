@@ -3,7 +3,7 @@ mod config;
 mod utils;
 
 use clap::{Parser, Subcommand};
-use cmd::{handle_jobs, handle_list_jobs, handle_login, handle_logs, handle_price};
+use cmd::{handle_jobs, handle_list_jobs, handle_login, handle_logs, handle_price, handle_hist};
 
 #[derive(Parser)]
 #[command(name = "cluster")]
@@ -28,6 +28,12 @@ enum Commands {
     Ls,
     /// Get interactive job information
     Jobs,
+    /// Show historical jobs for the current user
+    Hist {
+        /// Limit number of historical jobs (default 10)
+        #[arg(short = 'n', long = "num", default_value_t = 10)]
+        num: usize,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -39,6 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Logs { selector } => handle_logs(selector)?,
         Commands::Ls => handle_list_jobs()?,
         Commands::Jobs => handle_jobs()?,
+        Commands::Hist { num } => handle_hist(Some(num))?,
     }
 
     Ok(())

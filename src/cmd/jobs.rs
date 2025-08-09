@@ -1,3 +1,4 @@
+use crate::cmd::condor::condor_history_for_user;
 use crate::cmd::logs::handle_logs;
 use crate::config::ClusterConfig;
 use crate::utils::serde::deserialize_request_gpus;
@@ -66,6 +67,23 @@ pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
     if jobs.is_empty() {
         println!("No jobs found for user {}.", username);
         return Ok(());
+    }
+
+    // Show recent history before entering interactive UI
+    let hist_attrs = ["ClusterId", "ProcId", "Cmd", "Args", "RequestGPUs"].join(",");
+    let recent_hist: Vec<JobRow> = condor_history_for_user(login, &username, &hist_attrs, 10)?;
+    if !recent_hist.is_empty() {
+        println!("Recent finished jobs (last 10):");
+        for j in recent_hist.iter() {
+            println!(
+                "{:>10}  GPUs: {}  Cmd: {} {}",
+                format!("{}.{}", j.cluster_id, j.proc_id),
+                j.request_gpus,
+                j.cmd.as_deref().unwrap_or(""),
+                j.args.as_deref().unwrap_or("")
+            );
+        }
+        println!("");
     }
 
     let mut sel: usize = 0;
