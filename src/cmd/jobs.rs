@@ -283,7 +283,7 @@ pub fn handle_jobs() -> Result<(), Box<dyn std::error::Error>> {
                         terminal::disable_raw_mode()?;
                         let selector =
                             Some(format!("{}.{}", selected.cluster_id, selected.proc_id));
-                        if let Err(e) = handle_logs(selector) {
+                        if let Err(e) = handle_logs(selector, false, false, false, None) {
                             eprintln!("Error showing logs: {}", e);
                         }
                         return Ok(());

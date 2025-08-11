@@ -45,7 +45,13 @@ fn parse_job_selector(selector: &str) -> Option<(i32, Option<i32>)> {
     None
 }
 
-pub fn handle_logs(selector: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
+pub fn handle_logs(
+    selector: Option<String>,
+    show_out_only: bool,
+    show_log_only: bool,
+    show_err_only: bool,
+    num_lines: Option<i64>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let config = ClusterConfig::load();
     let login = match &config.login {
         Some(l) => l,
@@ -132,8 +138,25 @@ pub fn handle_logs(selector: Option<String>) -> Result<(), Box<dyn std::error::E
     let out = selected.out.as_deref().unwrap_or("");
     let err = selected.err.as_deref().unwrap_or("");
 
+    let any_filter = show_out_only || show_log_only || show_err_only;
+    let effective_lines: i64 = match num_lines {
+        Some(v) => v,
+        None => {
+            if any_filter {
+                0
+            } else {
+                50
+            }
+        }
+    };
+    let lines_desc = if effective_lines == 0 {
+        String::from("all")
+    } else {
+        effective_lines.to_string()
+    };
     println!(
-        "Showing last 50 lines for job {}.{}\nCmd: {} {}\nIwd: {}",
+        "Showing last {} lines for job {}.{}\nCmd: {} {}\nIwd: {}",
+        lines_desc,
         selected.cluster_id,
         selected.proc_id,
         selected.cmd.as_deref().unwrap_or(""),
@@ -150,10 +173,17 @@ pub fn handle_logs(selector: Option<String>) -> Result<(), Box<dyn std::error::E
         let path_full = build_path(iwd, path);
         // shell-escape for safety
         let path_esc = shell_escape_single_quotes(&path_full);
-        let cmd = format!(
-            "tail -n 50 '{}' || echo '[{}] file not found: {}'",
-            path_esc, label, path_full
-        );
+        let cmd = if effective_lines == 0 {
+            format!(
+                "cat '{}' || echo '[{}] file not found: {}'",
+                path_esc, label, path_full
+            )
+        } else {
+            format!(
+                "tail -n {} '{}' || echo '[{}] file not found: {}'",
+                effective_lines, path_esc, label, path_full
+            )
+        };
         let out = run_remote(login, &cmd)?;
         println!(
             "\n== {}: {}\n{}",
@@ -164,9 +194,15 @@ pub fn handle_logs(selector: Option<String>) -> Result<(), Box<dyn std::error::E
         Ok(())
     };
 
-    show_file("Log", user_log)?;
-    show_file("Out", out)?;
-    show_file("Err", err)?;
+    if !any_filter || show_log_only {
+        show_file("Log", user_log)?;
+    }
+    if !any_filter || show_out_only {
+        show_file("Out", out)?;
+    }
+    if !any_filter || show_err_only {
+        show_file("Err", err)?;
+    }
 
     Ok(())
 }

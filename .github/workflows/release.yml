@@ -1,0 +1,82 @@
+name: Build and Release Binaries
+
+on:
+    push:
+        tags:
+            - 'v*'
+    workflow_dispatch: {}
+
+permissions:
+    contents: write
+
+jobs:
+    build:
+        name: Build (${{ matrix.os }} - ${{ matrix.arch }})
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - os: ubuntu-latest
+                      arch: x64
+                    - os: macos-latest
+                      arch: ${{ runner.arch }}
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Install Rust (stable)
+              uses: dtolnay/rust-toolchain@stable
+
+            - name: Cache cargo
+              uses: Swatinem/rust-cache@v2
+              with:
+                  cache-targets: true
+
+            - name: Build
+              run: cargo build --release --locked
+
+            - name: Prepare artifact
+              shell: bash
+              run: |
+                  set -euxo pipefail
+                  BIN_NAME="mct"
+                  BIN_PATH="target/release/${BIN_NAME}"
+                  test -f "$BIN_PATH"
+
+                  # Strip symbols to reduce size (best-effort across OSes)
+                  if command -v strip >/dev/null 2>&1; then
+                    strip "$BIN_PATH" || true
+                  fi
+
+                  # Normalize names
+                  OS_LOWER=$(echo "${{ runner.os }}" | tr '[:upper:]' '[:lower:]')
+                  ARCH_LOWER=$(echo "${{ runner.arch }}" | tr '[:upper:]' '[:lower:]')
+                  TAG="${GITHUB_REF_NAME}"
+
+                  ART_DIR="dist"
+                  mkdir -p "$ART_DIR"
+
+                  ARCHIVE_NAME="${BIN_NAME}-${TAG}-${OS_LOWER}-${ARCH_LOWER}.tar.gz"
+                  tar -C target/release -czf "$ART_DIR/$ARCHIVE_NAME" "$BIN_NAME"
+
+                  echo "artifact_name=$ARCHIVE_NAME" >> "$GITHUB_ENV"
+                  echo "artifact_path=$ART_DIR/$ARCHIVE_NAME" >> "$GITHUB_ENV"
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ${{ env.artifact_name }}
+                  path: ${{ env.artifact_path }}
+                  if-no-files-found: error
+
+            - name: Upload to GitHub Release
+              uses: softprops/action-gh-release@v2
+              if: startsWith(github.ref, 'refs/tags/')
+              with:
+                  files: ${{ env.artifact_path }}
+                  draft: false
+                  prerelease: false
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
